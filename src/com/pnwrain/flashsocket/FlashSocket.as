@@ -1,7 +1,9 @@
 package com.pnwrain.flashsocket
 {
-	import com.adobe.serialization.json.JSON;
 	import com.pnwrain.flashsocket.events.FlashSocketEvent;
+	import net.gimite.websocket.WebSocket;
+	import net.gimite.websocket.WebSocketEvent;
+	import net.gimite.websocket.IWebSocketLogger;
 	
 	import flash.events.Event;
 	import flash.events.EventDispatcher;
@@ -18,7 +20,7 @@ package com.pnwrain.flashsocket
 	import mx.collections.ArrayCollection;
 	import mx.utils.URLUtil;
 
-	public class FlashSocket extends EventDispatcher implements IWebSocketWrapper
+	public class FlashSocket extends EventDispatcher implements IWebSocketLogger
 	{
 		protected var debug:Boolean = false;
 		protected var callerUrl:String;
@@ -37,13 +39,14 @@ package com.pnwrain.flashsocket
 		private var proxyHost:String;
 		private var proxyPort:int;
 		private var headers:String;
+		private var policyUrl:String;
 		private var timer:Timer;
 		
 		private var ackRegexp:RegExp = new RegExp('(\\d+)\\+(.*)');
 		private var ackId:int = 0;
 		private var acks:Object = { };
 		
-		public function FlashSocket( domain:String, protocol:String=null, proxyHost:String = null, proxyPort:int = 0, headers:String = null)
+		public function FlashSocket( domain:String, protocol:String=null, proxyHost:String = null, proxyPort:int = 0, headers:String = null, policyUrl:String = null)
 		{
 			var httpProtocal:String = "http";
 			var webSocketProtocal:String = "ws";
@@ -66,6 +69,7 @@ package com.pnwrain.flashsocket
 			this.proxyHost = proxyHost;
 			this.proxyPort = proxyPort;
 			this.headers = headers;
+			this.policyUrl = policyUrl;
 			
 			var r:URLRequest = new URLRequest();
 			r.url = httpProtocal+"://" + domain + "/socket.io/1/?time=" + new Date().getTime();
@@ -103,10 +107,11 @@ package com.pnwrain.flashsocket
 			
 		}
 		protected function onHandshake(event:Event):void{
-			
+			var cookies:String = "";
+
 			loadDefaultPolicyFile(socketURL);
-			webSocket = new WebSocket(this, socketURL, protocol, proxyHost, proxyPort, headers);
-			webSocket.addEventListener("event", onData);
+			webSocket = new WebSocket(1, socketURL, [], getOrigin(), proxyHost, proxyPort, cookies, headers, this);
+			webSocket.addEventListener("message", onData);
 			webSocket.addEventListener(Event.CLOSE, onClose);
 			webSocket.addEventListener(Event.CONNECT, onConnect);
 			webSocket.addEventListener(IOErrorEvent.IO_ERROR, onIoError);
@@ -154,7 +159,14 @@ package com.pnwrain.flashsocket
 		}
 		
 		protected function loadDefaultPolicyFile(wsUrl:String):void {
-			var policyUrl:String = "xmlsocket://" + URLUtil.getServerName(wsUrl) + ":843";
+			var policyUrl:String;
+
+			if (this.policyUrl) {
+				policyUrl = this.policyUrl;
+			}
+			else {
+				policyUrl = "xmlsocket://" + URLUtil.getServerName(wsUrl) + ":843";
+			}
 			log("policy file: " + policyUrl);
 			Security.loadPolicyFile(policyUrl);
 		}
@@ -187,13 +199,12 @@ package com.pnwrain.flashsocket
 		/////////////////////////////////////////////////////////////////
 		protected var frame:String = '~m~';
 		
-		protected function onData(e:*):void{
-			var event:Object = (e.target as WebSocket).receiveEvents();
-			var data:Object = event[0];
-			
+		protected function onData(e:WebSocketEvent):void{
+			var data:Object = parseEvent(e);
+
 			if ( data.type == "message" ){
 				this._setTimeout();
-				var msg:String = decodeURIComponent(data.data);
+				var msg:String = decodeURIComponent(data.message);
 				if (msg){
 					this._onMessage(msg);
 				}
@@ -211,6 +222,28 @@ package com.pnwrain.flashsocket
 			
 		}
 		
+		private function parseEvent(event:WebSocketEvent):Object {
+			var webSocket:WebSocket = event.target as WebSocket;
+			var eventObj:Object = {};
+			eventObj.type = event.type;
+			eventObj.webSocketId = webSocket.getId();
+			eventObj.readyState = webSocket.getReadyState();
+			eventObj.protocol = webSocket.getAcceptedProtocol();
+			if (event.message !== null) {
+				eventObj.message = event.message;
+			}
+			if (event.wasClean) {
+				eventObj.wasClean = event.wasClean;
+			}
+			if (event.code) {
+				eventObj.code = event.code;
+			}
+			if (event.reason !== null) {
+				eventObj.reason = event.reason;
+			}
+			return eventObj;
+		}
+
 		public var connected:Boolean;
 		public var connecting:Boolean;
 		
@@ -245,11 +278,11 @@ package com.pnwrain.flashsocket
 					break;
 				case '4':
 					var fe:FlashSocketEvent = new FlashSocketEvent(FlashSocketEvent.MESSAGE);
-					fe.data = JSON.decode(dm.msg);
+					fe.data = JSON.parse(dm.msg);
 					dispatchEvent(fe);
 					break;
 				case '5':
-					var m:Object = JSON.decode(dm.msg);
+					var m:Object = JSON.parse(dm.msg);
 					var e:FlashSocketEvent = new FlashSocketEvent(m.name);
 					e.data = m.args;
 					dispatchEvent(e);
@@ -257,7 +290,7 @@ package com.pnwrain.flashsocket
 				case '6':
 					var parts:Object =  this.ackRegexp.exec(dm.msg);
 					var id:int = int(parts[1]);
-					var args:Array = JSON.decode(parts[2]);
+					var args:Array = JSON.parse('{"arr": ' + parts[2] + '}').arr;
 					if (this.acks.hasOwnProperty(id)) {
 						var func:Function = this.acks[id] as Function;
 						//pass however many args the function is looking for back to it
@@ -323,17 +356,23 @@ package com.pnwrain.flashsocket
 					//webSocket.send(_encode(msg));
 					webSocket.send('3:'+messageId+'::' + msg as String);
 				}else if ( msg is Object ){
-					webSocket.send('4:'+messageId+'::' + JSON.encode(msg));
+					webSocket.send('4:'+messageId+'::' + JSON.stringify(msg));
 				}else{
 					throw("Unsupported Message Type");
 				}
 			}else{
-				webSocket.send('5:'+messageId+'::' + JSON.encode({"name":event,"args":msg}));
+				webSocket.send('5:'+messageId+'::' + JSON.stringify({"name":event,"args":msg}));
 			}
 		}
 		
 		public function emit(event:String, msg:Object,  callback:Function = null):void{
 			send(msg, event, callback) 
+		}
+
+		public function close():void {
+			if(webSocket) {
+				webSocket.close();
+			}
 		}
 		
 		private function _onConnect():void{
