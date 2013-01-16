@@ -22,7 +22,7 @@ package com.pnwrain.flashsocket
 
 	public class FlashSocket extends EventDispatcher implements IWebSocketLogger
 	{
-		protected var debug:Boolean = false;
+		protected var debug:Boolean = true;
 		protected var callerUrl:String;
 		protected var socketURL:String;
 		protected var webSocket:WebSocket;
@@ -62,7 +62,7 @@ package com.pnwrain.flashsocket
 			}
 
 			this.socketURL = webSocketProtocal+"://" + domain + "/socket.io/1/flashsocket";
-			this.callerUrl = httpProtocal+"://localhost/socket.swf";
+			this.callerUrl = httpProtocal+"://" + domain + "/socket.swf";
 			
 			this.domain = domain;
 			this.protocol = protocol;
@@ -70,6 +70,8 @@ package com.pnwrain.flashsocket
 			this.proxyPort = proxyPort;
 			this.headers = headers;
 			this.policyUrl = policyUrl;
+
+			loadDefaultPolicyFile(socketURL);
 			
 			var r:URLRequest = new URLRequest();
 			r.url = httpProtocal+"://" + domain + "/socket.io/1/?time=" + new Date().getTime();
@@ -78,7 +80,6 @@ package com.pnwrain.flashsocket
 			ul.addEventListener(Event.COMPLETE, onDiscover);
 			ul.addEventListener(HTTPStatusEvent.HTTP_STATUS, onDiscoverError);
 			ul.addEventListener(IOErrorEvent.IO_ERROR , onDiscoverError);
-
 		}
 		
 		protected function onDiscover(event:Event):void{
@@ -102,14 +103,12 @@ package com.pnwrain.flashsocket
 			}
 			this.socketURL = this.socketURL + "/" + sessionID;
 			
-			
 			onHandshake(event);
-			
 		}
+
 		protected function onHandshake(event:Event):void{
 			var cookies:String = "";
 
-			loadDefaultPolicyFile(socketURL);
 			webSocket = new WebSocket(1, socketURL, [], getOrigin(), proxyHost, proxyPort, cookies, headers, this);
 			webSocket.addEventListener("message", onData);
 			webSocket.addEventListener(Event.CLOSE, onClose);
@@ -117,6 +116,7 @@ package com.pnwrain.flashsocket
 			webSocket.addEventListener(IOErrorEvent.IO_ERROR, onIoError);
 			webSocket.addEventListener(SecurityErrorEvent.SECURITY_ERROR, onSecurityError);
 		}
+
 		protected function onHeartBeatTimer(event:TimerEvent):void{
 			this._onHeartbeat();
 		}
@@ -130,6 +130,7 @@ package com.pnwrain.flashsocket
 				}
 			}
 		}
+
 		protected function onHandshakeError(event:Event):void{
 			if ( event is HTTPStatusEvent ){
 				if ( (event as HTTPStatusEvent).status != 200){
@@ -149,10 +150,12 @@ package com.pnwrain.flashsocket
 			var fe:FlashSocketEvent = new FlashSocketEvent(FlashSocketEvent.CONNECT);
 			dispatchEvent(fe);
 		}
+
 		protected function onIoError(event:Event):void{
 			var fe:FlashSocketEvent = new FlashSocketEvent(FlashSocketEvent.IO_ERROR);
 			dispatchEvent(fe);
 		}
+		
 		protected function onSecurityError(event:Event):void{
 			var fe:FlashSocketEvent = new FlashSocketEvent(FlashSocketEvent.SECURITY_ERROR);
 			dispatchEvent(fe);
