@@ -1,5 +1,6 @@
 package com.pnwrain.flashsocket
 {
+  import com.adobe.serialization.json.JSON;
 	import com.pnwrain.flashsocket.events.FlashSocketEvent;
 	import net.gimite.websocket.WebSocket;
 	import net.gimite.websocket.WebSocketEvent;
@@ -281,11 +282,11 @@ package com.pnwrain.flashsocket
 					break;
 				case '4':
 					var fe:FlashSocketEvent = new FlashSocketEvent(FlashSocketEvent.MESSAGE);
-					fe.data = JSON.parse(dm.msg);
+					fe.data = JSON.decode(dm.msg);
 					dispatchEvent(fe);
 					break;
 				case '5':
-					var m:Object = JSON.parse(dm.msg);
+					var m:Object = JSON.decode(dm.msg);
 					var e:FlashSocketEvent = new FlashSocketEvent(m.name);
 					e.data = m.args;
 					dispatchEvent(e);
@@ -293,7 +294,7 @@ package com.pnwrain.flashsocket
 				case '6':
 					var parts:Object =  this.ackRegexp.exec(dm.msg);
 					var id:int = int(parts[1]);
-					var args:Array = JSON.parse('{"arr": ' + parts[2] + '}').arr;
+					var args:Array = JSON.decode('{"arr": ' + parts[2] + '}').arr;
 					if (this.acks.hasOwnProperty(id)) {
 						var func:Function = this.acks[id] as Function;
 						//pass however many args the function is looking for back to it
@@ -359,12 +360,12 @@ package com.pnwrain.flashsocket
 					//webSocket.send(_encode(msg));
 					webSocket.send('3:'+messageId+'::' + msg as String);
 				}else if ( msg is Object ){
-					webSocket.send('4:'+messageId+'::' + JSON.stringify(msg));
+					webSocket.send('4:'+messageId+'::' + JSON.encode(msg));
 				}else{
 					throw("Unsupported Message Type");
 				}
 			}else{
-				webSocket.send('5:'+messageId+'::' + JSON.stringify({"name":event,"args":msg}));
+				webSocket.send('5:'+messageId+'::' + JSON.encode({"name":event,"args":msg}));
 			}
 		}
 		
