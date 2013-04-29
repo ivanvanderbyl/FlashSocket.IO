@@ -5,7 +5,7 @@ package com.pnwrain.flashsocket
 	import net.gimite.websocket.WebSocket;
 	import net.gimite.websocket.WebSocketEvent;
 	import net.gimite.websocket.IWebSocketLogger;
-	
+
 	import flash.events.Event;
 	import flash.events.EventDispatcher;
 	import flash.events.HTTPStatusEvent;
@@ -15,25 +15,26 @@ package com.pnwrain.flashsocket
 	import flash.net.URLLoader;
 	import flash.net.URLRequest;
 	import flash.net.URLRequestMethod;
+	import flash.net.URLVariables
 	import flash.system.Security;
 	import flash.utils.Timer;
-	
+
 	import mx.collections.ArrayCollection;
 	import mx.utils.URLUtil;
 
 	public class FlashSocket extends EventDispatcher implements IWebSocketLogger
 	{
-		protected var debug:Boolean = false;
+		protected var debug:Boolean = true;
 		protected var callerUrl:String;
 		protected var socketURL:String;
 		protected var webSocket:WebSocket;
-		
+
 		//vars returned from discovery
 		public var sessionID:String;
 		protected var heartBeatTimeout:int;
 		protected var connectionClosingTimeout:int;
 		protected var protocols:Array;
-		
+
 		//hold over variables from constructor for discover to use
 		private var domain:String;
 		private var protocol:String;
@@ -42,21 +43,21 @@ package com.pnwrain.flashsocket
 		private var headers:String;
 		private var policyUrl:String;
 		private var timer:Timer;
-		
+
 		private var ackRegexp:RegExp = new RegExp('(\\d+)\\+(.*)');
 		private var ackId:int = 0;
 		private var acks:Object = { };
-		
-		public function FlashSocket( domain:String, protocol:String=null, proxyHost:String = null, proxyPort:int = 0, headers:String = null, policyUrl:String = null)
+
+		public function FlashSocket( domain:String, parameters:URLVariables=null, protocol:String=null, proxyHost:String = null, proxyPort:int = 0, headers:String = null, policyUrl:String = null)
 		{
 			var httpProtocal:String = "http";
 			var webSocketProtocal:String = "ws";
-			
+
 			if (URLUtil.isHttpsURL(domain)) {
 				httpProtocal = "https";
 				webSocketProtocal = "wss";
 			}
-			
+
 			//if the user passed in http:// or https:// we want to strip that out
 			if(domain.indexOf('://')>=0){
 				domain = URLUtil.getServerNameWithPort(domain);
@@ -64,7 +65,7 @@ package com.pnwrain.flashsocket
 
 			this.socketURL = webSocketProtocal+"://" + domain + "/socket.io/1/flashsocket";
 			this.callerUrl = httpProtocal+"://" + domain + "/socket.swf";
-			
+
 			this.domain = domain;
 			this.protocol = protocol;
 			this.proxyHost = proxyHost;
@@ -73,16 +74,26 @@ package com.pnwrain.flashsocket
 			this.policyUrl = policyUrl;
 
 			loadDefaultPolicyFile(socketURL);
-			
+
 			var r:URLRequest = new URLRequest();
-			r.url = httpProtocal+"://" + domain + "/socket.io/1/?time=" + new Date().getTime();
+			//r.url = httpProtocal+"://" + domain + "/socket.io/1/?time=" + new Date().getTime();
+
+			if (parameters == null) {
+				parameters = new URLVariables()
+			}
+
+			parameters.time = new Date().getTime();
+
+			var rUrl:String = httpProtocal+"://" + domain + "/socket.io/1/?" + parameters.toString();
+
+      r.url = rUrl;
 			r.method = URLRequestMethod.POST;
 			var ul:URLLoader = new URLLoader(r);
 			ul.addEventListener(Event.COMPLETE, onDiscover);
 			ul.addEventListener(HTTPStatusEvent.HTTP_STATUS, onDiscoverError);
 			ul.addEventListener(IOErrorEvent.IO_ERROR , onDiscoverError);
 		}
-		
+
 		protected function onDiscover(event:Event):void{
 			var response:String = event.target.data;
 			var respData:Array = response.split(":");
@@ -90,11 +101,11 @@ package com.pnwrain.flashsocket
 			heartBeatTimeout = respData[1];
 			connectionClosingTimeout = respData[2];
 			protocols = respData[3].toString().split(",");
-			
+
 			timer = new Timer( Math.ceil(heartBeatTimeout*.75)*1000);
 			timer.addEventListener(TimerEvent.TIMER, onHeartBeatTimer);
 			//timer.start();
-			
+
 			var flashSupported:Boolean = false;
 			for ( var i:int=0; i<protocols.length; i++ ){
 				if ( protocols[i] == "flashsocket" ){
@@ -103,7 +114,7 @@ package com.pnwrain.flashsocket
 				}
 			}
 			this.socketURL = this.socketURL + "/" + sessionID;
-			
+
 			onHandshake(event);
 		}
 
@@ -121,7 +132,7 @@ package com.pnwrain.flashsocket
 		protected function onHeartBeatTimer(event:TimerEvent):void{
 			this._onHeartbeat();
 		}
-		
+
 		protected function onDiscoverError(event:Event):void{
 			if ( event is HTTPStatusEvent ){
 				if ( (event as HTTPStatusEvent).status != 200){
@@ -141,12 +152,12 @@ package com.pnwrain.flashsocket
 				}
 			}
 		}
-		
+
 		protected function onClose(event:Event):void{
 			var fe:FlashSocketEvent = new FlashSocketEvent(FlashSocketEvent.CLOSE);
 			dispatchEvent(fe);
 		}
-		
+
 		protected function onConnect(event:Event):void{
 			var fe:FlashSocketEvent = new FlashSocketEvent(FlashSocketEvent.CONNECT);
 			dispatchEvent(fe);
@@ -156,12 +167,12 @@ package com.pnwrain.flashsocket
 			var fe:FlashSocketEvent = new FlashSocketEvent(FlashSocketEvent.IO_ERROR);
 			dispatchEvent(fe);
 		}
-		
+
 		protected function onSecurityError(event:Event):void{
 			var fe:FlashSocketEvent = new FlashSocketEvent(FlashSocketEvent.SECURITY_ERROR);
 			dispatchEvent(fe);
 		}
-		
+
 		protected function loadDefaultPolicyFile(wsUrl:String):void {
 			var policyUrl:String;
 
@@ -174,12 +185,12 @@ package com.pnwrain.flashsocket
 			log("policy file: " + policyUrl);
 			Security.loadPolicyFile(policyUrl);
 		}
-		
+
 		public function getOrigin():String {
 			return (URLUtil.getProtocol(this.callerUrl) + "://" +
 				URLUtil.getServerNameWithPort(this.callerUrl)).toLowerCase();
 		}
-		
+
 		public function getCallerHost():String {
 			return null;
 			//I dont think we need this
@@ -190,19 +201,19 @@ package com.pnwrain.flashsocket
 				trace("webSocketLog: " + message);
 			}
 		}
-		
+
 		public function error(message:String):void {
 			trace("webSocketError: "  + message);
 		}
-		
+
 		public function fatal(message:String):void {
 			trace("webSocketError: " + message);
 		}
-		
+
 		/////////////////////////////////////////////////////////////////
 		/////////////////////////////////////////////////////////////////
 		protected var frame:String = '~m~';
-		
+
 		protected function onData(e:WebSocketEvent):void{
 			var data:Object = parseEvent(e);
 
@@ -218,14 +229,14 @@ package com.pnwrain.flashsocket
 				var fe:FlashSocketEvent = new FlashSocketEvent(FlashSocketEvent.CLOSE);
 				dispatchEvent(fe);
 			}else{
-				
+
 				log("We got a data message that is not 'message': " + data.type);
 			}
 		}
 		private function _setTimeout():void{
-			
+
 		}
-		
+
 		private function parseEvent(event:WebSocketEvent):Object {
 			var webSocket:WebSocket = event.target as WebSocket;
 			var eventObj:Object = {};
@@ -250,7 +261,7 @@ package com.pnwrain.flashsocket
 
 		public var connected:Boolean;
 		public var connecting:Boolean;
-		
+
 		private function _onMessage(message:String):void{
 			//https://github.com/LearnBoost/socket.io-spec#Encoding
 			/*	0		Disconnect
@@ -264,7 +275,7 @@ package com.pnwrain.flashsocket
 				8	noop
 			*/
 			var dm:Object = deFrame(message);
-			
+
 			switch ( dm.type ){
 				case '0':
 					this._onDisconnect();
@@ -303,13 +314,13 @@ package com.pnwrain.flashsocket
 						} else {
 							func.apply(null,args);
 						}
-						
+
 						delete  this.acks[id];
 					}
 					break;
-					
+
 			}
-			
+
 		}
 		protected function deFrame(message:String):Object{
 			var si:int = 0;
@@ -329,32 +340,32 @@ package com.pnwrain.flashsocket
 					n = Number(data.substr(i, 1));
 					if (data.substr(i, 1) == n){
 						number += n;
-					} else {	
+					} else {
 						data = unescape(data.substr(number.length + frame.length));
 						number = Number(number);
 						break;
-					} 
+					}
 				}
 				messages.push(data.substr(0, number)); // here
 				data = data.substr(number);
 			} while(data !== '');
 			return messages;
 		}
-		
+
 		private function _onHeartbeat():void{
 			webSocket.send( '2::' ); // echo
 		};
-		
+
 		public function send(msg:Object, event:String = null,callback:Function = null):void{
 			var messageId: String = "";
-			
+
 			if (null != callback) {
 				//%2B is urlencode(+)
 				messageId = this.ackId.toString() + '%2B';
 				this.acks[this.ackId] = callback;
 				this.ackId++;
 			}
-			
+
 			if ( event == null ){
 				if ( msg is String){
 					//webSocket.send(_encode(msg));
@@ -368,9 +379,9 @@ package com.pnwrain.flashsocket
 				webSocket.send('5:'+messageId+'::' + JSON.encode({"name":event,"args":msg}));
 			}
 		}
-		
+
 		public function emit(event:String, msg:Object,  callback:Function = null):void{
-			send(msg, event, callback) 
+			send(msg, event, callback)
 		}
 
 		public function close():void {
@@ -378,7 +389,7 @@ package com.pnwrain.flashsocket
 				webSocket.close();
 			}
 		}
-		
+
 		private function _onConnect():void{
 			this.connected = true;
 			this.connecting = false;
@@ -391,7 +402,7 @@ package com.pnwrain.flashsocket
 			var e:FlashSocketEvent = new FlashSocketEvent(FlashSocketEvent.DISCONNECT);
 			dispatchEvent(e);
 		};
-		
+
 		private function _encode(messages:*, json:Boolean=false):String{
 			var ret:String = '',
 				message:String,
